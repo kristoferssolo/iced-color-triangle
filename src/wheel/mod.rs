@@ -120,7 +120,7 @@ where
         }
         let ring = state.ring.draw(renderer, bounds.size(), |frame| {
             transform.apply(frame);
-            draw_ring(frame);
+            draw_ring(frame, transform.scale);
         });
         let triangle = state.triangle.draw(renderer, bounds.size(), |frame| {
             transform.apply(frame);
@@ -191,7 +191,10 @@ impl<F> Wheel<F> {
 mod tests {
     use super::{
         State, Wheel,
-        geometry::{CENTER, SIDE, ring_point, rotate_point, triangle_point, triangle_rotation},
+        geometry::{
+            CENTER, RING_RADIUS, RING_WIDTH, SIDE, hue_angle, ring_point, rotate_point,
+            triangle_point, triangle_rotation,
+        },
         transform::Transform,
     };
     use crate::Selection;
@@ -390,6 +393,44 @@ mod tests {
             assert_none!(dispatch_in(
                 bounds, &mut wheel, &mut state, &PRESS, unscaled
             ));
+        }
+    }
+
+    #[rstest]
+    fn clicks_near_both_ring_edges_at_every_size(
+        #[values(120.0, 240.0, 360.0)] side: f32,
+        #[values(0.0, 135.0, 270.0)] hue: f32,
+    ) {
+        let bounds = Rectangle::new(Point::new(8.0, 12.0), Size::new(side, side));
+        let transform = assert_some!(Transform::fit(bounds.size()));
+        let center = transform.to_canvas(CENTER);
+        let angle = hue_angle(hue);
+        let at = |radius: f32| {
+            Point::new(
+                radius.mul_add(angle.cos(), center.x + bounds.x),
+                radius.mul_add(angle.sin(), center.y + bounds.y),
+            )
+        };
+        let inner = (RING_RADIUS - RING_WIDTH / 2.0) * transform.scale;
+        let outer = (RING_RADIUS + RING_WIDTH / 2.0) * transform.scale;
+        // Half a pixel inside each edge hits the ring; half a pixel outside misses
+        for (radius, hits) in [
+            (inner + 0.5, true),
+            (outer - 0.5, true),
+            (inner - 0.5, false),
+            (outer + 0.5, false),
+        ] {
+            let mut wheel = new_wheel(Color::WHITE);
+            let mut state = State::default();
+            let selected = dispatch_in(bounds, &mut wheel, &mut state, &PRESS, at(radius));
+            assert_eq!(
+                selected.is_some(),
+                hits,
+                "side {side}, hue {hue}: radius {radius} between {inner} and {outer}"
+            );
+            if let Some(selected) = selected {
+                assert!((selected.hue() - hue).abs() < 0.01);
+            }
         }
     }
 

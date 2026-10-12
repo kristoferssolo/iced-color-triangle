@@ -192,3 +192,65 @@ fn layout_constraints_scale_the_drawing() {
         "drawing extends past the constrained bounds"
     );
 }
+
+fn render_at(side: u16, selection: Selection) -> Pixmap {
+    let length = f32::from(side);
+    let bounds = Rectangle::with_size(Size::new(length, length));
+    let mut renderer = Renderer::new(Font::DEFAULT, Pixels(16.0));
+    let mut element: Element<'_, Selection, Theme, Renderer> =
+        color_triangle(selection, std::convert::identity)
+            .size(length)
+            .into();
+    let mut tree = Tree::new(element.as_widget());
+    let node = element.as_widget_mut().layout(
+        &mut tree,
+        &renderer,
+        &Limits::new(Size::ZERO, bounds.size()),
+    );
+    renderer.reset(bounds);
+    element.as_widget().draw(
+        &tree,
+        &mut renderer,
+        &Theme::Dark,
+        &Style {
+            text_color: Color::WHITE,
+        },
+        Layout::new(&node),
+        Cursor::Unavailable,
+        &bounds,
+    );
+    let mut pixmap = assert_some!(Pixmap::new(side.into(), side.into()));
+    let mut mask = assert_some!(Mask::new(side.into(), side.into()));
+    let viewport = Viewport::with_physical_size(Size::new(side.into(), side.into()), 1.0);
+    renderer.draw(
+        &mut pixmap.as_mut(),
+        &mut mask,
+        &viewport,
+        &[bounds],
+        BACKGROUND,
+    );
+    pixmap
+}
+
+#[test]
+fn ring_thickness_scales_with_the_widget() {
+    for side in [120_u16, 240, 360] {
+        let pixmap = render_at(side, Selection::from(Color::from_rgb8(255, 0, 0)));
+        let scale = f32::from(side) / 240.0;
+        // The ring spans radii 92..=110; nothing is drawn between 86 and the ring
+        let (gap, inner, outer) = (86.0 * scale, 92.0 * scale, 110.0 * scale);
+        let row = u32::from(side / 2);
+        // The pixmap stores BGRA, so compare against a known background pixel
+        let background = assert_some!(pixmap.pixel(0, 0));
+        // Walk the ring's right side, skipping a 1.5 px antialiased margin at each edge
+        for x in side / 2..side {
+            let radius = f32::from(x) + 0.5 - f32::from(side) / 2.0;
+            let drawn = assert_some!(pixmap.pixel(x.into(), row)) != background;
+            if (inner + 1.5..=outer - 1.5).contains(&radius) {
+                assert!(drawn, "side {side}: ring missing at radius {radius}");
+            } else if (gap..=inner - 1.5).contains(&radius) || radius >= outer + 1.5 {
+                assert!(!drawn, "side {side}: ring drawn at radius {radius}");
+            }
+        }
+    }
+}

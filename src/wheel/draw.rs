@@ -11,7 +11,7 @@ use iced_widget::{
     graphics::geometry::Renderer,
 };
 
-pub(super) fn draw_ring<R: Renderer>(frame: &mut Frame<R>) {
+pub(super) fn draw_ring<R: Renderer>(frame: &mut Frame<R>, scale: f32) {
     for segment in 0..180u16 {
         let start = f32::from(segment) * 2.0;
         let path = Path::new(|builder| {
@@ -29,7 +29,7 @@ pub(super) fn draw_ring<R: Renderer>(frame: &mut Frame<R>) {
             &path,
             Stroke {
                 style: canvas::Style::Gradient(gradient.into()),
-                width: RING_WIDTH,
+                width: RING_WIDTH * scale,
                 ..Stroke::default()
             },
         );
