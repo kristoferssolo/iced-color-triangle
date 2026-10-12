@@ -7,7 +7,7 @@ use iced_widget::{canvas::Canvas, graphics::geometry::Renderer};
 
 /// A hue ring and triangle color selector.
 ///
-/// Created with [`color_triangle`](crate::color_triangle). Defaults to 240×240 logical pixels.
+/// Created with [`color_triangle`](crate::color_triangle()). Defaults to 240×240 logical pixels.
 /// The wheel scales to the largest square that fits its bounds and stays centered.
 #[must_use]
 pub struct ColorTriangle<F> {
