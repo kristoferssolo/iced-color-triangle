@@ -3,11 +3,12 @@
 //! Retain [`Selection`] in application state and replace it on each change.
 //! This preserves the chosen hue when the color becomes black, white, or gray.
 
+mod color_triangle;
 mod selection;
 mod wheel;
 
+pub use color_triangle::ColorTriangle;
 pub use selection::Selection;
-pub use wheel::ColorTriangle;
 
 /// Creates a hue ring and triangle selector, 240×240 logical pixels by default.
 ///

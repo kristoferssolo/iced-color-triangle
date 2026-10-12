@@ -173,10 +173,10 @@ fn layout_constraints_scale_the_drawing() {
         &[BOUNDS],
         BACKGROUND,
     );
-    // The pixmap stores BGRA, so compare against a known background pixel.
+    // The pixmap stores BGRA, so compare against a known background pixel
     let background = assert_some!(pixmap.pixel(0, 0));
     let is_background = |x, y| assert_some!(pixmap.pixel(x, y)) == background;
-    // The ring's right edge shows hue 180 (cyan) at half the default radius.
+    // The ring's right edge shows hue 180 (cyan) at half the default radius
     let ring = assert_some!(pixmap.pixel(110, 60));
     let (low, high) = (ring.red().min(ring.blue()), ring.red().max(ring.blue()));
     assert!(

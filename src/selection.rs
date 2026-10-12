@@ -6,7 +6,7 @@ use palette::{FromColor, Hsl, Srgb};
 /// Hue is expressed in degrees; saturation, lightness, and alpha are in `0..=1`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Selection {
-    pub(crate) hue: f32,
+    hue: f32,
     saturation: f32,
     lightness: f32,
     alpha: f32,
