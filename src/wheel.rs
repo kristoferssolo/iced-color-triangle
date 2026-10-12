@@ -131,7 +131,9 @@ fn wheel_point(bounds: Rectangle, cursor: Cursor) -> Option<Point> {
 
 struct State<R: Renderer> {
     drag: Option<Drag>,
-    field: Cache<R>,
+    // The ring depends only on size, so hue changes rebuild just the triangle.
+    ring: Cache<R>,
+    triangle: Cache<R>,
     markers: Cache<R>,
     selection: Cell<Option<Selection>>,
     hue: Cell<f32>,
@@ -141,7 +143,8 @@ impl<R: Renderer> Default for State<R> {
     fn default() -> Self {
         Self {
             drag: None,
-            field: Cache::new(),
+            ring: Cache::new(),
+            triangle: Cache::new(),
             markers: Cache::new(),
             selection: Cell::new(None),
             hue: Cell::new(0.0),
@@ -198,15 +201,16 @@ where
             return Vec::new();
         };
         if state.hue.get().to_bits() != self.selection.hue.to_bits() {
-            state.field.clear();
+            state.triangle.clear();
             state.hue.set(self.selection.hue);
         }
-        let field = state.field.draw(renderer, bounds.size(), |frame| {
-            frame.with_save(|frame| {
-                transform.apply(frame);
-                draw_ring(frame);
-                draw_triangle(frame, self.selection.hue);
-            });
+        let ring = state.ring.draw(renderer, bounds.size(), |frame| {
+            transform.apply(frame);
+            draw_ring(frame);
+        });
+        let triangle = state.triangle.draw(renderer, bounds.size(), |frame| {
+            transform.apply(frame);
+            draw_triangle(frame, self.selection.hue);
         });
         if state.selection.get() != Some(self.selection) {
             state.markers.clear();
@@ -223,7 +227,7 @@ where
                 transform.to_canvas(triangle_point(chroma, white, self.selection.hue)),
             );
         });
-        vec![field, markers]
+        vec![ring, triangle, markers]
     }
 
     fn mouse_interaction(

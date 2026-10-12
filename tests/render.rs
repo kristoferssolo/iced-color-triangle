@@ -65,7 +65,9 @@ fn successive_redraws_match_a_fresh_frame() {
         let mut tree = Tree::new(element.as_widget());
         let mut previous: Option<Vec<Layer>> = None;
         for step in 0..4u8 {
-            let selection = initial.with_lightness(f32::from(step).mul_add(0.06, 0.12));
+            let selection = initial
+                .with_lightness(f32::from(step).mul_add(0.06, 0.12))
+                .with_hue(f32::from(step).mul_add(40.0, 240.0));
             paint(&mut renderer, &mut tree, selection);
             let regions = previous.as_ref().map_or_else(
                 || vec![BOUNDS],
