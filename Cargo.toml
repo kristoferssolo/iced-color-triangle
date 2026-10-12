@@ -27,6 +27,7 @@ iced = { version = "0.14", default-features = false, features = [
 iced_tiny_skia = { version = "0.14", default-features = false, features = [
   "geometry",
 ] }
+rstest = "0.27"
 tiny-skia = { version = "0.11", default-features = false, features = ["std"] }
 
 [lints.clippy]
