@@ -25,19 +25,54 @@ impl<F> ColorTriangle<F> {
         }
     }
 
-    /// Sets the widget width
+    /// Sets the widget width.
+    ///
+    /// Fill the available width while keeping a fixed height. The wheel stays centered:
+    ///
+    /// ```
+    /// use iced::{Color, Element, Length};
+    /// use iced_color_triangle::{Selection, color_triangle};
+    ///
+    /// let picker: Element<'_, Selection> = color_triangle(Color::BLACK.into(), |selection| selection)
+    ///     .width(Length::Fill)
+    ///     .height(240)
+    ///     .into();
+    /// ```
     pub fn width(mut self, width: impl Into<Length>) -> Self {
         self.width = width.into();
         self
     }
 
-    /// Sets the widget height
+    /// Sets the widget height.
+    ///
+    /// Fill the available height while keeping a fixed width:
+    ///
+    /// ```
+    /// use iced::{Color, Element, Length};
+    /// use iced_color_triangle::{Selection, color_triangle};
+    ///
+    /// let picker: Element<'_, Selection> = color_triangle(Color::BLACK.into(), |selection| selection)
+    ///     .width(240)
+    ///     .height(Length::Fill)
+    ///     .into();
+    /// ```
     pub fn height(mut self, height: impl Into<Length>) -> Self {
         self.height = height.into();
         self
     }
 
-    /// Sets both width and height
+    /// Sets both width and height.
+    ///
+    /// Create a 160×160 logical pixel picker:
+    ///
+    /// ```
+    /// use iced::{Color, Element};
+    /// use iced_color_triangle::{Selection, color_triangle};
+    ///
+    /// let picker: Element<'_, Selection> = color_triangle(Color::BLACK.into(), |selection| selection)
+    ///     .size(160)
+    ///     .into();
+    /// ```
     pub fn size(self, size: impl Into<Length>) -> Self {
         let size = size.into();
         self.width(size).height(size)

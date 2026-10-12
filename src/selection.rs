@@ -4,6 +4,29 @@ use palette::{FromColor, Hsl, Srgb};
 /// A selected color that retains hue and saturation at black and white.
 ///
 /// Hue is expressed in degrees; saturation, lightness, and alpha are in `0..=1`.
+///
+/// # Example
+///
+/// Create a selection from a color, edit its HSL components, and convert it back.
+/// Keep the selection itself in application state to retain hue and saturation
+/// at black and white:
+///
+/// ```
+/// use iced_core::Color;
+/// use iced_color_triangle::Selection;
+///
+/// let red = Selection::from(Color::from_rgba8(255, 0, 0, 0.5));
+/// let blue = red.with_hue(240.0);
+/// let black = blue.with_lightness(0.0);
+///
+/// assert_eq!(Color::from(black).into_rgba8(), [0, 0, 0, 128]);
+/// assert_eq!(black.hue(), 240.0);
+/// assert_eq!(black.saturation(), 1.0);
+///
+/// // Raising lightness restores blue and preserves the original alpha.
+/// let restored = black.with_lightness(0.5);
+/// assert_eq!(Color::from(restored).into_rgba8(), [0, 0, 255, 128]);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Selection {
     hue: f32,
@@ -40,25 +63,35 @@ impl From<Selection> for Color {
 }
 
 impl Selection {
-    /// Returns hue in degrees, in `0..360`
+    /// Returns hue in degrees, in `0..360`.
     #[must_use]
     pub const fn hue(self) -> f32 {
         self.hue
     }
 
-    /// Returns HSL saturation, in `0..=`
+    /// Returns HSL saturation, in `0..=1`.
     #[must_use]
     pub const fn saturation(self) -> f32 {
         self.saturation
     }
 
-    /// Returns HSL lightness, in `0..=1`
+    /// Returns HSL lightness, in `0..=1`.
     #[must_use]
     pub const fn lightness(self) -> f32 {
         self.lightness
     }
 
-    /// Replaces hue, wrapping finite values into `0..360` and ignoring non-finite values
+    /// Replaces hue, wrapping finite values into `0..360` and ignoring non-finite values.
+    ///
+    /// ```
+    /// use iced_core::Color;
+    /// use iced_color_triangle::Selection;
+    ///
+    /// let red = Selection::from(Color::from_rgb8(255, 0, 0));
+    /// let green = red.with_hue(120.0);
+    /// assert_eq!(Color::from(green).into_rgba8(), [0, 255, 0, 255]);
+    /// assert_eq!(red.with_hue(480.0), green);
+    /// ```
     #[must_use]
     pub fn with_hue(mut self, hue: f32) -> Self {
         if hue.is_finite() {
@@ -67,7 +100,20 @@ impl Selection {
         self
     }
 
-    /// Replaces saturation, clamping finite values into `0..=1` and ignoring non-finite values
+    /// Replaces saturation, clamping finite values into `0..=1` and ignoring non-finite values.
+    ///
+    /// Setting saturation to zero produces gray while retaining the chosen hue:
+    ///
+    /// ```
+    /// use iced_core::Color;
+    /// use iced_color_triangle::Selection;
+    ///
+    /// let blue = Selection::from(Color::from_rgb8(0, 0, 255));
+    /// let gray = blue.with_saturation(0.0);
+    /// assert_eq!(Color::from(gray).into_rgba8(), [128, 128, 128, 255]);
+    /// assert_eq!(gray.hue(), blue.hue());
+    /// assert_eq!(gray.with_saturation(1.0), blue);
+    /// ```
     #[must_use]
     pub const fn with_saturation(mut self, saturation: f32) -> Self {
         if saturation.is_finite() {
@@ -76,7 +122,20 @@ impl Selection {
         self
     }
 
-    /// Replaces lightness, clamping finite values into `0..=1` and ignoring non-finite values
+    /// Replaces lightness, clamping finite values into `0..=1` and ignoring non-finite values.
+    ///
+    /// Lighten a color without changing its hue or saturation:
+    ///
+    /// ```
+    /// use iced_core::Color;
+    /// use iced_color_triangle::Selection;
+    ///
+    /// let blue = Selection::from(Color::from_rgb8(0, 0, 255));
+    /// let lighter = blue.with_lightness(0.75);
+    /// assert_eq!(Color::from(lighter).into_rgba8(), [128, 128, 255, 255]);
+    /// assert_eq!(lighter.hue(), blue.hue());
+    /// assert_eq!(lighter.saturation(), blue.saturation());
+    /// ```
     #[must_use]
     pub const fn with_lightness(mut self, lightness: f32) -> Self {
         if lightness.is_finite() {

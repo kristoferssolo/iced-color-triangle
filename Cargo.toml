@@ -6,6 +6,8 @@ authors = ["Kristofers Solo <dev@kristofers.xyz>"]
 description = "A hue ring and triangle color selector for Iced"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
+documentation = "https://docs.rs/iced-color-triangle"
+repository = "https://github.com/kristoferssolo/iced-color-triangle"
 keywords = ["iced", "color", "picker", "widget"]
 categories = ["gui"]
 
