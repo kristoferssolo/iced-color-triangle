@@ -345,7 +345,7 @@ mod tests {
     fn clamps_triangle_drags_and_commits_the_release_position() {
         let mut wheel: Wheel<fn(Selection) -> Selection> = Wheel {
             on_change: std::convert::identity,
-            selection: Color::from_rgba(0.0, 0.0, 1.0, 0.5).into(),
+            selection: Color::from_rgba8(0, 0, 255, 0.5).into(),
         };
         let mut state = State::default();
         assert_some!(dispatch(
@@ -409,7 +409,7 @@ mod tests {
     fn rotated_hit_testing_preserves_the_selected_color_mix() {
         for hue in [0.0, 60.0, 120.0, 180.0, 240.0, 300.0] {
             let mut wheel: Wheel<fn(Selection) -> Selection> = Wheel {
-                selection: Selection::from(Color::from_rgba(0.0, 0.0, 1.0, 0.5)).with_hue(hue),
+                selection: Selection::from(Color::from_rgba8(0, 0, 255, 0.5)).with_hue(hue),
                 on_change: std::convert::identity,
             };
             let mut state = State::default();

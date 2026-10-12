@@ -123,7 +123,19 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    const TEAL: Color = Color::from_rgba(0.2, 0.6, 0.5, 0.25);
+    const TEAL: [u8; 4] = [51, 153, 128, 64];
+
+    fn rgba8([r, g, b, a]: [u8; 4]) -> Color {
+        Color::from_rgba8(r, g, b, f32::from(a) / 255.0)
+    }
+
+    fn selection(rgba: [u8; 4]) -> Selection {
+        Selection::from(rgba8(rgba))
+    }
+
+    fn to_rgba8(selection: Selection) -> [u8; 4] {
+        Color::from(selection).into_rgba8()
+    }
 
     fn assert_close(actual: f32, expected: f32) {
         assert!(
@@ -142,19 +154,17 @@ mod tests {
     #[case([12, 200, 99, 255])]
     #[case([250, 3, 140, 17])]
     fn round_trips_rgba8(#[case] rgba: [u8; 4]) {
-        let [r, g, b, a] = rgba;
-        let color = Color::from_rgba8(r, g, b, f32::from(a) / 255.0);
-        assert_eq!(Color::from(Selection::from(color)).into_rgba8(), rgba);
+        assert_eq!(to_rgba8(selection(rgba)), rgba);
     }
 
     #[rstest]
-    #[case(Color::from_rgb(1.0, 0.0, 0.0), 0.0)]
-    #[case(Color::from_rgb(1.0, 1.0, 0.0), 60.0)]
-    #[case(Color::from_rgb(0.0, 1.0, 0.0), 120.0)]
-    #[case(Color::from_rgb(0.0, 0.0, 1.0), 240.0)]
-    #[case(Color::from_rgb(1.0, 0.0, 0.5), 330.0)]
-    fn reads_hue_in_degrees(#[case] color: Color, #[case] hue: f32) {
-        assert_close(Selection::from(color).hue(), hue);
+    #[case([255, 0, 0, 255], 0.0)]
+    #[case([255, 255, 0, 255], 60.0)]
+    #[case([0, 255, 0, 255], 120.0)]
+    #[case([0, 0, 255, 255], 240.0)]
+    #[case([255, 0, 128, 255], 329.88)]
+    fn reads_hue_in_degrees(#[case] rgba: [u8; 4], #[case] hue: f32) {
+        assert!((selection(rgba).hue() - hue).abs() < 0.01);
     }
 
     #[rstest]
@@ -166,7 +176,7 @@ mod tests {
     #[case(-720.0, 0.0)]
     #[case(-1e-6, 0.0)]
     fn wraps_hue(#[case] hue: f32, #[case] expected: f32) {
-        let hue = Selection::from(TEAL).with_hue(hue).hue();
+        let hue = selection(TEAL).with_hue(hue).hue();
         assert!((0.0..360.0).contains(&hue), "{hue} is outside 0..360");
         assert_close(hue, expected);
     }
@@ -175,7 +185,7 @@ mod tests {
     fn ignores_non_finite_components(
         #[values(f32::NAN, f32::INFINITY, f32::NEG_INFINITY)] value: f32,
     ) {
-        let selection = Selection::from(TEAL);
+        let selection = selection(TEAL);
         assert_eq!(selection.with_hue(value), selection);
         assert_eq!(selection.with_saturation(value), selection);
         assert_eq!(selection.with_lightness(value), selection);
@@ -186,32 +196,31 @@ mod tests {
     #[case(0.25, 0.25)]
     #[case(1.5, 1.0)]
     fn clamps_saturation_and_lightness(#[case] value: f32, #[case] expected: f32) {
-        let selection = Selection::from(TEAL);
+        let selection = selection(TEAL);
         assert_close(selection.with_saturation(value).saturation(), expected);
         assert_close(selection.with_lightness(value).lightness(), expected);
     }
 
+    // Raw `Color` channels are the only way to construct these inputs
     #[rstest]
-    #[case(f32::NAN, 0.0)]
-    #[case(f32::INFINITY, 0.0)]
-    #[case(f32::NEG_INFINITY, 0.0)]
-    #[case(-1.0, 0.0)]
-    #[case(2.0, 1.0)]
-    fn sanitizes_color_channels(#[case] value: f32, #[case] expected: f32) {
-        let color = Color::from(Selection::from(Color {
+    #[case(f32::NAN, 0)]
+    #[case(f32::INFINITY, 0)]
+    #[case(f32::NEG_INFINITY, 0)]
+    #[case(-1.0, 0)]
+    #[case(2.0, 255)]
+    fn sanitizes_color_channels(#[case] value: f32, #[case] expected: u8) {
+        let selection = Selection::from(Color {
             r: value,
             g: value,
             b: value,
             a: value,
-        }));
-        for channel in [color.r, color.g, color.b, color.a] {
-            assert_close(channel, expected);
-        }
+        });
+        assert_eq!(to_rgba8(selection), [expected; 4]);
     }
 
     #[rstest]
     fn preserves_alpha(
-        #[values(0.0, 0.25, 0.5, 1.0)] alpha: f32,
+        #[values(0, 64, 128, 255)] alpha: u8,
         #[values(
             |s: Selection| s,
             |s: Selection| s.with_hue(200.0),
@@ -222,28 +231,28 @@ mod tests {
         )]
         edit: fn(Selection) -> Selection,
     ) {
-        let selection = edit(Selection::from(Color { a: alpha, ..TEAL }));
-        assert_close(Color::from(selection).a, alpha);
+        let [r, g, b, _] = TEAL;
+        let [.., a] = to_rgba8(edit(selection([r, g, b, alpha])));
+        assert_eq!(a, alpha);
     }
 
     #[rstest]
-    #[case::black_by_lightness(|s: Selection| s.with_lightness(0.0), Color::BLACK)]
-    #[case::white_by_lightness(|s: Selection| s.with_lightness(1.0), Color::WHITE)]
-    #[case::black_by_mix(|s: Selection| s.with_mix(0.0, 0.0), Color::BLACK)]
-    #[case::white_by_mix(|s: Selection| s.with_mix(0.0, 1.0), Color::WHITE)]
+    #[case::black_by_lightness(|s: Selection| s.with_lightness(0.0), [0, 0, 0])]
+    #[case::white_by_lightness(|s: Selection| s.with_lightness(1.0), [255, 255, 255])]
+    #[case::black_by_mix(|s: Selection| s.with_mix(0.0, 0.0), [0, 0, 0])]
+    #[case::white_by_mix(|s: Selection| s.with_mix(0.0, 1.0), [255, 255, 255])]
     fn retains_hue_and_saturation_through_black_and_white(
         #[case] extreme: fn(Selection) -> Selection,
-        #[case] color: Color,
+        #[case] rgb: [u8; 3],
     ) {
-        let original = Selection::from(TEAL);
+        let original = selection(TEAL);
         let selection = extreme(original);
-        assert_eq!(
-            Color::from(selection).into_rgba8(),
-            Color { a: TEAL.a, ..color }.into_rgba8()
-        );
+        let [r, g, b] = rgb;
+        let [.., a] = TEAL;
+        assert_eq!(to_rgba8(selection), [r, g, b, a]);
         assert_close(selection.hue(), original.hue());
         assert_close(selection.saturation(), original.saturation());
         let restored = selection.with_lightness(original.lightness());
-        assert_eq!(Color::from(restored).into_rgba8(), TEAL.into_rgba8());
+        assert_eq!(to_rgba8(restored), TEAL);
     }
 }
