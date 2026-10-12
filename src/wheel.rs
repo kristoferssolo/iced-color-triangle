@@ -17,6 +17,8 @@ const RING_WIDTH: f32 = 18.0;
 const TOP: f32 = 36.0;
 const BOTTOM: f32 = 162.0;
 const HALF_BASE: f32 = 72.75;
+// Rotation round-trips drift exact corners slightly outside the triangle.
+const HIT_TOLERANCE: f32 = 0.01;
 
 pub fn view<'a, Message: 'a, Theme: 'a, R: Renderer + 'static>(
     selection: Selection,
@@ -181,7 +183,10 @@ fn hit(point: Point, hue: f32) -> Option<Drag> {
     }
     let point = rotate_point(point, -triangle_rotation(hue));
     let span = (point.y - TOP) / (BOTTOM - TOP);
-    if (0.0..=1.0).contains(&span) && (point.x - CENTER.x).abs() <= HALF_BASE * span {
+    let margin = HIT_TOLERANCE / (BOTTOM - TOP);
+    if (-margin..=1.0 + margin).contains(&span)
+        && (point.x - CENTER.x).abs() <= HALF_BASE.mul_add(span, HIT_TOLERANCE)
+    {
         return Some(Drag::Triangle);
     }
     None
@@ -423,6 +428,21 @@ mod tests {
             let handle = ring_point(hue) - CENTER;
             assert!(corner.x.mul_add(handle.y, -corner.y * handle.x).abs() < 0.01);
             assert!(corner.x.mul_add(handle.x, corner.y * handle.y) > 0.0);
+        }
+    }
+
+    #[test]
+    fn hits_every_triangle_corner_at_every_hue() {
+        for hue in (0..360u16).map(f32::from) {
+            for (chroma, white) in [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0)] {
+                let corner = triangle_point(chroma, white, hue);
+                assert!(
+                    matches!(hit(corner, hue), Some(Drag::Triangle)),
+                    "missed corner ({chroma}, {white}) at hue {hue}"
+                );
+                let outside = corner + (corner - CENTER) * (1.0 / corner.distance(CENTER));
+                assert_none!(hit(outside, hue));
+            }
         }
     }
 
