@@ -7,20 +7,21 @@ mod selection;
 mod wheel;
 
 pub use selection::Selection;
+pub use wheel::ColorTriangle;
 
-use iced_core::Element;
-use iced_widget::graphics::geometry::Renderer;
-
-/// Creates a 240x240 logical-pixel hue ring and triangle selector.
+/// Creates a hue ring and triangle selector, 240×240 logical pixels by default.
+///
+/// Use [`ColorTriangle::width`], [`ColorTriangle::height`], or [`ColorTriangle::size`]
+/// to resize it; drawing and input scale together.
 ///
 /// The callback receives candidate selections during dragging and on release.
 /// The caller decides when to apply the color, using [`iced_core::Color::from`].
 /// Dragging beyond a triangle edge clamps the selection to that edge.
 /// The triangle rotates so its colored corner points toward the hue-ring handle.
 /// The widget preserves alpha and works with any Iced canvas renderer and theme.
-pub fn color_triangle<'a, Message: 'a, Theme: 'a, R: Renderer + 'static>(
+pub const fn color_triangle<Message, F: Fn(Selection) -> Message>(
     selection: Selection,
-    on_change: impl Fn(Selection) -> Message + 'a,
-) -> Element<'a, Message, Theme, R> {
-    wheel::view(selection, on_change)
+    on_change: F,
+) -> ColorTriangle<F> {
+    ColorTriangle::new(selection, on_change)
 }

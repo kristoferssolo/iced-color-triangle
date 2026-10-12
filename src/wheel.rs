@@ -1,6 +1,6 @@
 use crate::{Selection, selection::hue_color};
 use iced_core::{
-    Color, Element, Event, Point, Radians, Rectangle, Vector,
+    Color, Element, Event, Length, Point, Radians, Rectangle, Size, Vector,
     mouse::{self, Button, Cursor},
 };
 use iced_widget::{
@@ -10,6 +10,7 @@ use iced_widget::{
 };
 use std::cell::Cell;
 
+// Wheel geometry is defined in a 240×240 space and scaled to fit the canvas.
 const SIDE: f32 = 240.0;
 const CENTER: Point = Point::new(120.0, 120.0);
 const RING_RADIUS: f32 = 101.0;
@@ -20,17 +21,59 @@ const HALF_BASE: f32 = 72.75;
 // Rotation round-trips drift exact corners slightly outside the triangle.
 const HIT_TOLERANCE: f32 = 0.01;
 
-pub fn view<'a, Message: 'a, Theme: 'a, R: Renderer + 'static>(
-    selection: Selection,
-    on_change: impl Fn(Selection) -> Message + 'a,
-) -> Element<'a, Message, Theme, R> {
-    canvas::Canvas::new(Wheel {
-        selection,
-        on_change,
-    })
-    .width(SIDE)
-    .height(SIDE)
-    .into()
+/// A hue ring and triangle color selector.
+///
+/// Created with [`color_triangle`](crate::color_triangle). Defaults to 240×240 logical pixels.
+/// The wheel scales to the largest square that fits its bounds and stays centered.
+#[must_use]
+pub struct ColorTriangle<F> {
+    wheel: Wheel<F>,
+    width: Length,
+    height: Length,
+}
+
+impl<F> ColorTriangle<F> {
+    pub(crate) const fn new(selection: Selection, on_change: F) -> Self {
+        Self {
+            wheel: Wheel {
+                selection,
+                on_change,
+            },
+            width: Length::Fixed(SIDE),
+            height: Length::Fixed(SIDE),
+        }
+    }
+
+    /// Sets the widget width.
+    pub fn width(mut self, width: impl Into<Length>) -> Self {
+        self.width = width.into();
+        self
+    }
+
+    /// Sets the widget height.
+    pub fn height(mut self, height: impl Into<Length>) -> Self {
+        self.height = height.into();
+        self
+    }
+
+    /// Sets both width and height.
+    pub fn size(self, size: impl Into<Length>) -> Self {
+        let size = size.into();
+        self.width(size).height(size)
+    }
+}
+
+impl<'a, Message: 'a, Theme: 'a, R, F> From<ColorTriangle<F>> for Element<'a, Message, Theme, R>
+where
+    R: Renderer + 'static,
+    F: Fn(Selection) -> Message + 'a,
+{
+    fn from(triangle: ColorTriangle<F>) -> Self {
+        canvas::Canvas::new(triangle.wheel)
+            .width(triangle.width)
+            .height(triangle.height)
+            .into()
+    }
 }
 
 struct Wheel<F> {
@@ -42,6 +85,48 @@ struct Wheel<F> {
 enum Drag {
     Hue,
     Triangle,
+}
+
+/// Maps the 240×240 wheel space onto a centered square in the canvas.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Transform {
+    offset: Vector,
+    scale: f32,
+}
+
+impl Transform {
+    fn fit(size: Size) -> Option<Self> {
+        let fitted = size.width.min(size.height);
+        (fitted.is_finite() && fitted > 0.0).then(|| Self {
+            offset: Vector::new((size.width - fitted) / 2.0, (size.height - fitted) / 2.0),
+            scale: fitted / SIDE,
+        })
+    }
+
+    const fn to_canvas(self, point: Point) -> Point {
+        Point::new(
+            point.x.mul_add(self.scale, self.offset.x),
+            point.y.mul_add(self.scale, self.offset.y),
+        )
+    }
+
+    fn to_wheel(self, point: Point) -> Point {
+        Point::new(
+            (point.x - self.offset.x) / self.scale,
+            (point.y - self.offset.y) / self.scale,
+        )
+    }
+
+    fn apply<R: Renderer>(self, frame: &mut Frame<R>) {
+        frame.translate(self.offset);
+        frame.scale(self.scale);
+    }
+}
+
+/// Returns the cursor position in wheel space.
+fn wheel_point(bounds: Rectangle, cursor: Cursor) -> Option<Point> {
+    let transform = Transform::fit(bounds.size())?;
+    Some(transform.to_wheel(cursor.position_from(bounds.position())?))
 }
 
 struct State<R: Renderer> {
@@ -64,8 +149,10 @@ impl<R: Renderer> Default for State<R> {
     }
 }
 
-impl<Message, Theme, R: Renderer + 'static, F: Fn(Selection) -> Message> Program<Message, Theme, R>
-    for Wheel<F>
+impl<Message, Theme, R, F> Program<Message, Theme, R> for Wheel<F>
+where
+    R: Renderer + 'static,
+    F: Fn(Selection) -> Message,
 {
     type State = State<R>;
 
@@ -78,18 +165,17 @@ impl<Message, Theme, R: Renderer + 'static, F: Fn(Selection) -> Message> Program
     ) -> Option<Action<Message>> {
         match event {
             Event::Mouse(mouse::Event::ButtonPressed(Button::Left)) => {
-                let point = cursor.position_from(bounds.position())?;
+                let point = wheel_point(bounds, cursor)?;
                 state.drag = hit(point, self.selection.hue);
                 self.pick(state.drag?, point)
             }
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
-                let point = Cursor::Available(*position).position_from(bounds.position())?;
+                let point = wheel_point(bounds, Cursor::Available(*position))?;
                 self.pick(state.drag?, point)
             }
             Event::Mouse(mouse::Event::ButtonReleased(Button::Left)) => {
                 let drag = state.drag.take()?;
-                cursor
-                    .position_from(bounds.position())
+                wheel_point(bounds, cursor)
                     .and_then(|point| self.pick(drag, point))
                     .or_else(|| Some(Action::request_redraw().and_capture()))
             }
@@ -108,13 +194,19 @@ impl<Message, Theme, R: Renderer + 'static, F: Fn(Selection) -> Message> Program
         bounds: Rectangle,
         _cursor: Cursor,
     ) -> Vec<Geometry<R>> {
+        let Some(transform) = Transform::fit(bounds.size()) else {
+            return Vec::new();
+        };
         if state.hue.get().to_bits() != self.selection.hue.to_bits() {
             state.field.clear();
             state.hue.set(self.selection.hue);
         }
         let field = state.field.draw(renderer, bounds.size(), |frame| {
-            draw_ring(frame);
-            draw_triangle(frame, self.selection.hue);
+            frame.with_save(|frame| {
+                transform.apply(frame);
+                draw_ring(frame);
+                draw_triangle(frame, self.selection.hue);
+            });
         });
         if state.selection.get() != Some(self.selection) {
             state.markers.clear();
@@ -123,9 +215,13 @@ impl<Message, Theme, R: Renderer + 'static, F: Fn(Selection) -> Message> Program
         // Cached geometry gives Iced the complete canvas bounds for damage.
         // Live strokes omit their thickness and can leave old marker pixels behind.
         let markers = state.markers.draw(renderer, bounds.size(), |frame| {
-            marker(frame, ring_point(self.selection.hue));
+            // Markers keep a constant on-screen size, so only their centers are scaled.
+            marker(frame, transform.to_canvas(ring_point(self.selection.hue)));
             let (chroma, white) = self.selection.mix();
-            marker(frame, triangle_point(chroma, white, self.selection.hue));
+            marker(
+                frame,
+                transform.to_canvas(triangle_point(chroma, white, self.selection.hue)),
+            );
         });
         vec![field, markers]
     }
@@ -137,8 +233,7 @@ impl<Message, Theme, R: Renderer + 'static, F: Fn(Selection) -> Message> Program
         cursor: Cursor,
     ) -> mouse::Interaction {
         if state.drag.is_some()
-            || cursor
-                .position_from(bounds.position())
+            || wheel_point(bounds, cursor)
                 .and_then(|point| hit(point, self.selection.hue))
                 .is_some()
         {
@@ -316,8 +411,8 @@ fn marker<R: Renderer>(frame: &mut Frame<R>, point: Point) {
 mod tests {
     use super::*;
     use claims::{assert_none, assert_some};
-    use iced_core::Size;
     use iced_widget::Renderer;
+    use rstest::rstest;
 
     const PRESS: Event = Event::Mouse(mouse::Event::ButtonPressed(Button::Left));
     const RELEASE: Event = Event::Mouse(mouse::Event::ButtonReleased(Button::Left));
@@ -328,15 +423,26 @@ mod tests {
         event: &Event,
         cursor: Point,
     ) -> Option<Selection> {
-        let selection = Program::<Selection>::update(
+        dispatch_in(
+            Rectangle::with_size(Size::new(SIDE, SIDE)),
             wheel,
             state,
             event,
-            Rectangle::with_size(Size::new(SIDE, SIDE)),
-            Cursor::Available(cursor),
-        )?
-        .into_inner()
-        .0?;
+            cursor,
+        )
+    }
+
+    fn dispatch_in(
+        bounds: Rectangle,
+        wheel: &mut Wheel<fn(Selection) -> Selection>,
+        state: &mut State<Renderer>,
+        event: &Event,
+        cursor: Point,
+    ) -> Option<Selection> {
+        let selection =
+            Program::<Selection>::update(wheel, state, event, bounds, Cursor::Available(cursor))?
+                .into_inner()
+                .0?;
         wheel.selection = selection;
         Some(selection)
     }
@@ -428,6 +534,103 @@ mod tests {
             let handle = ring_point(hue) - CENTER;
             assert!(corner.x.mul_add(handle.y, -corner.y * handle.x).abs() < 0.01);
             assert!(corner.x.mul_add(handle.x, corner.y * handle.y) > 0.0);
+        }
+    }
+
+    #[rstest]
+    #[case(Size::new(240.0, 240.0), Vector::new(0.0, 0.0), 1.0)]
+    #[case(Size::new(120.0, 120.0), Vector::new(0.0, 0.0), 0.5)]
+    #[case(Size::new(300.0, 200.0), Vector::new(50.0, 0.0), 200.0 / 240.0)]
+    #[case(Size::new(100.0, 480.0), Vector::new(0.0, 190.0), 100.0 / 240.0)]
+    fn fits_the_largest_centered_square(
+        #[case] size: Size,
+        #[case] offset: Vector,
+        #[case] scale: f32,
+    ) {
+        let transform = assert_some!(Transform::fit(size));
+        assert!((transform.offset.x - offset.x).abs() < 1e-4);
+        assert!((transform.offset.y - offset.y).abs() < 1e-4);
+        assert!((transform.scale - scale).abs() < 1e-6);
+        let point = Point::new(37.0, 201.0);
+        assert!(
+            transform
+                .to_wheel(transform.to_canvas(point))
+                .distance(point)
+                < 1e-3
+        );
+    }
+
+    #[rstest]
+    #[case(Size::ZERO)]
+    #[case(Size::new(0.0, 240.0))]
+    #[case(Size::new(f32::INFINITY, f32::INFINITY))]
+    fn rejects_degenerate_bounds(#[case] size: Size) {
+        assert_none!(Transform::fit(size));
+        let mut wheel: Wheel<fn(Selection) -> Selection> = Wheel {
+            on_change: std::convert::identity,
+            selection: Color::WHITE.into(),
+        };
+        let mut state = State::default();
+        assert_none!(dispatch_in(
+            Rectangle::new(Point::ORIGIN, size),
+            &mut wheel,
+            &mut state,
+            &PRESS,
+            CENTER
+        ));
+    }
+
+    #[rstest]
+    fn scales_input_with_the_canvas(
+        #[values(
+            Rectangle::new(Point::new(0.0, 0.0), Size::new(120.0, 120.0)),
+            Rectangle::new(Point::new(30.0, 10.0), Size::new(300.0, 200.0)),
+            Rectangle::new(Point::new(5.0, 40.0), Size::new(480.0, 480.0))
+        )]
+        bounds: Rectangle,
+        #[values(0.0, 120.0, 300.0)] hue: f32,
+    ) {
+        let transform = assert_some!(Transform::fit(bounds.size()));
+        let screen = |point| {
+            let point = transform.to_canvas(point);
+            Point::new(point.x + bounds.x, point.y + bounds.y)
+        };
+        let mut wheel: Wheel<fn(Selection) -> Selection> = Wheel {
+            selection: Selection::from(Color::from_rgba8(0, 0, 255, 0.5)).with_hue(hue),
+            on_change: std::convert::identity,
+        };
+        let mut state = State::default();
+        let selected = assert_some!(dispatch_in(
+            bounds,
+            &mut wheel,
+            &mut state,
+            &PRESS,
+            screen(triangle_point(0.35, 0.4, hue))
+        ));
+        let (chroma, white) = selected.mix();
+        assert!((chroma - 0.35).abs() < 0.0001);
+        assert!((white - 0.4).abs() < 0.0001);
+        assert_some!(dispatch_in(
+            bounds, &mut wheel, &mut state, &RELEASE, CENTER
+        ));
+        let selected = assert_some!(dispatch_in(
+            bounds,
+            &mut wheel,
+            &mut state,
+            &PRESS,
+            screen(ring_point(hue + 90.0))
+        ));
+        assert!((selected.hue - (hue + 90.0).rem_euclid(360.0)).abs() < 0.001);
+        assert_some!(dispatch_in(
+            bounds, &mut wheel, &mut state, &RELEASE, CENTER
+        ));
+        // On a shrunken canvas, the 240×240 ring radius lies outside the scaled ring.
+        if transform.scale < 0.9 {
+            let (center, ring) = (screen(CENTER), ring_point(hue + 90.0));
+            let unscaled = Point::new(center.x + ring.x - CENTER.x, center.y + ring.y - CENTER.y);
+            assert_none!(dispatch_in(
+                bounds, &mut wheel, &mut state, &PRESS, unscaled
+            ));
         }
     }
 

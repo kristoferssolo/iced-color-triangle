@@ -16,17 +16,20 @@ enum Message {
 }
 
 fn view(selection: Selection) -> Element<'static, Message> {
-    color_triangle(selection, Message::Pick)
+    color_triangle(selection, Message::Pick).into()
 }
 ```
 
-The widget is 240 × 240 logical pixels. It preserves alpha.
+The widget defaults to 240×240 logical pixels. Change it with `.size(…)`,
+`.width(…)`, or `.height(…)`, which accept any `iced::Length`. The wheel scales
+to the largest centered square that fits, and input follows the drawing.
+It preserves alpha.
 The triangle rotates so its colored corner points toward the hue-ring handle.
 Callers own presets, component sliders, and Apply/Cancel behavior.
 The library enables no renderer or window-system backend.
 Enable `canvas` and your preferred renderer/runtime features in your application.
 
-Run the example on Linux with:
+Run the example with:
 
 ```sh
 cargo run --example picker

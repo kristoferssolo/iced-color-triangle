@@ -22,13 +22,16 @@ const BOUNDS: Rectangle = Rectangle {
 const BACKGROUND: Color = Color::from_rgb8(40, 42, 44);
 
 fn paint(renderer: &mut Renderer, tree: &mut Tree, selection: Selection) {
+    paint_within(renderer, tree, selection, BOUNDS.size());
+}
+
+fn paint_within(renderer: &mut Renderer, tree: &mut Tree, selection: Selection, limit: Size) {
     let mut element: Element<'_, Selection, Theme, Renderer> =
-        color_triangle(selection, std::convert::identity);
+        color_triangle(selection, std::convert::identity).into();
     tree.diff(element.as_widget());
-    let node =
-        element
-            .as_widget_mut()
-            .layout(tree, renderer, &Limits::new(Size::ZERO, BOUNDS.size()));
+    let node = element
+        .as_widget_mut()
+        .layout(tree, renderer, &Limits::new(Size::ZERO, limit));
     renderer.reset(BOUNDS);
     element.as_widget().draw(
         tree,
@@ -58,7 +61,7 @@ fn successive_redraws_match_a_fresh_frame() {
         let mut renderer = Renderer::new(Font::DEFAULT, Pixels(16.0));
         let initial = Selection::from(Color::from_rgb8(20, 30, 180));
         let element: Element<'_, Selection, Theme, Renderer> =
-            color_triangle(initial, std::convert::identity);
+            color_triangle(initial, std::convert::identity).into();
         let mut tree = Tree::new(element.as_widget());
         let mut previous: Option<Vec<Layer>> = None;
         for step in 0..4u8 {
@@ -112,7 +115,7 @@ fn rotated_triangle_has_no_background_gaps() {
     let mut renderer = Renderer::new(Font::DEFAULT, Pixels(16.0));
     let initial = Selection::from(Color::from_rgb8(20, 30, 180));
     let element: Element<'_, Selection, Theme, Renderer> =
-        color_triangle(initial, std::convert::identity);
+        color_triangle(initial, std::convert::identity).into();
     let mut tree = Tree::new(element.as_widget());
     for hue in [0.0, 60.0, 120.0, 180.0, 240.0, 300.0] {
         for side in [240_u32, 300, 480] {
@@ -148,4 +151,42 @@ fn rotated_triangle_has_no_background_gaps() {
             }
         }
     }
+}
+
+#[test]
+fn layout_constraints_scale_the_drawing() {
+    let mut renderer = Renderer::new(Font::DEFAULT, Pixels(16.0));
+    let selection = Selection::from(Color::from_rgb8(255, 0, 0));
+    let element: Element<'_, Selection, Theme, Renderer> =
+        color_triangle(selection, std::convert::identity).into();
+    let mut tree = Tree::new(element.as_widget());
+    paint_within(&mut renderer, &mut tree, selection, Size::new(120.0, 120.0));
+    let mut pixmap = assert_some!(Pixmap::new(240, 240));
+    let mut mask = assert_some!(Mask::new(240, 240));
+    let viewport = Viewport::with_physical_size(Size::new(240, 240), 1.0);
+    renderer.draw(
+        &mut pixmap.as_mut(),
+        &mut mask,
+        &viewport,
+        &[BOUNDS],
+        BACKGROUND,
+    );
+    // The pixmap stores BGRA, so compare against a known background pixel.
+    let background = assert_some!(pixmap.pixel(0, 0));
+    let is_background = |x, y| assert_some!(pixmap.pixel(x, y)) == background;
+    // The ring's right edge shows hue 180 (cyan) at half the default radius.
+    let ring = assert_some!(pixmap.pixel(110, 60));
+    let (low, high) = (ring.red().min(ring.blue()), ring.red().max(ring.blue()));
+    assert!(
+        ring.green() > 200 && high > 200 && low < 50,
+        "ring missing at its scaled radius: {ring:?}"
+    );
+    assert!(
+        !is_background(60, 60),
+        "triangle missing at the scaled center"
+    );
+    assert!(
+        is_background(221, 120),
+        "drawing extends past the constrained bounds"
+    );
 }
